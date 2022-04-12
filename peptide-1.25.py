@@ -1,5 +1,5 @@
 from __future__ import print_function
-
+import time
 import csv
 import os
 import torch
@@ -10,6 +10,16 @@ import pandas as pd
 # import tensorflow as tf
 import warnings
 import cmath
+import argparse
+import glob
+from tqdm import tqdm
+parser = argparse.ArgumentParser()
+parser.add_argument('--model', default='./model/complex-1.25-t-v4.model',required=False)
+parser.add_argument('--data', default='./cxdatabase/withoutX',required=False)
+parser.add_argument('--output_dir', default='./',required=False)
+parser.add_argument('--test_num', default=-1,required=False,help='Enter -1 to test on whole testset,or enter the real number')
+args = parser.parse_args()
+
 
 h_sp = 0
 h_sn = 0
@@ -20,7 +30,7 @@ warnings.filterwarnings('ignore')
 learning_rate = 1e-4
 Max_length = 100
 
-test_num = 257
+test_num = args.test_num
 # sample_num = 10
 # test_num = 15
 #sample_num=1260
@@ -41,13 +51,19 @@ np.set_printoptions(threshold=np.inf)
 
 # pssm测试集
 print('Loading pssm test data...')
-cwd = os.getcwd()
-read_path = './pssm(test)'
-os.chdir(read_path)
-csv_name_list = os.listdir()
-csv_name_list.sort(key=lambda x: int(x.split('.')[0]))
+# cwd = os.getcwd()
+read_path = args.data+'/pssm(peptide)'
+# os.chdir(read_path)
+csv_name_list=glob.glob(read_path+'/*')
+# csv_name_list=glob.glob('/Users/bytedance/Desktop/mvirt/cxdatabase/withoutX/pssm(peptide)/*')
+# csv_name_list = os.listdir()
+csv_name_list.sort(key=lambda x: int(x.split('/')[-1].split('.')[0]))
 protein = pd.read_csv(csv_name_list[0])
-for i in range(0, test_num):
+if test_num==-1:
+    test_num=len(csv_name_list)
+else:
+    pass
+for i in tqdm(range(test_num)):
     protein = pd.read_csv(csv_name_list[i])
     seqt = pd.read_csv(csv_name_list[i],usecols=[1]).transpose()
     seqt = seqt.values.tolist()
@@ -148,13 +164,14 @@ print('Loading pssm test data over')
 
 # hmm测试集
 print('Loading hmm test data...')
-cwd = os.getcwd()
-read_path = '../hmm(test)'
-os.chdir(read_path)
-csv_name_list = os.listdir()
-csv_name_list.sort(key=lambda x: int(x.split('.')[0]))
+# cwd = os.getcwd()
+read_path = args.data+'/hmm(peptide)'
+# os.chdir(read_path)
+csv_name_list=glob.glob((read_path+'/*'))
+# csv_name_list = os.listdir()
+csv_name_list.sort(key=lambda x: int(x.split('/')[-1].split('.')[0]))
 protein = pd.read_csv(csv_name_list[0])
-for i in range(0, test_num):
+for i in tqdm(range(0, test_num)):
     protein = pd.read_csv(csv_name_list[i])
     x = protein[['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W', 'Y']]
     if len(x) > Max_length:
@@ -180,9 +197,9 @@ x2t = x2t.view(test_num , Max_length, 20)
 # print("x2t", x2t.shape)
 print('Loading hmm test data over')
 
-cwd = os.getcwd()
-read_path = '../model'
-os.chdir(read_path)
+# cwd = os.getcwd()
+read_path = args.model
+# os.chdir(read_path)
 
 
 def cosine(x, y):
@@ -650,21 +667,21 @@ def accuracy(x_1,x_2,x_3,i,j,reallength1,label,epoch,who):
 
 
 
-cwd = os.getcwd()
-read_path = '../model'
+# cwd = os.getcwd()
+read_path = args.model
 # 修改当前工作目录
-os.chdir(read_path)
+# os.chdir(read_path)
 ############################################################################################################################################################
 
 model = Net()
 
 
 if torch.cuda.is_available():
-    device = torch.device("cuda:1" )
-    model.load_state_dict(torch.load('complex-1.25-t-v4.model',map_location=device))
+    device = torch.device("cuda:0" )
+    model.load_state_dict(torch.load(read_path,map_location=device))
 else:
     device=torch.device("cpu")
-    model.load_state_dict(torch.load('complex-1.25-t-v4.model', map_location=torch.device('cpu')))
+    model.load_state_dict(torch.load(read_path, map_location=torch.device('cpu')))
 model.to(device)
 
 
@@ -709,7 +726,16 @@ test_dataset = Test_Dataset(x1t, x2t, y1t,seqt)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=batchsize, shuffle=False, drop_last=True)
 
 acc_dict = []
-
+def save_sequence(y,index,length):
+    re=''
+    for i in range(length[index]):
+        if y[i]==0:
+            re+='H'
+        elif y[i]==1:
+            re+='E'
+        else:
+            re+='C'
+    return re
 def save_model(high_acc, epoch, bgru, h_acc, h_sn, h_sp, h_mcc):
     highest = high_acc
 
@@ -810,21 +836,28 @@ def save_model(high_acc, epoch, bgru, h_acc, h_sn, h_sp, h_mcc):
     tH_FN = 0
     tE_FN = 0
     tC_FN = 0
-
-    for i, (test_pssm, test_hmm, test_label, label_for_loss) in enumerate(test_loader):
+    sequences=[]
+    for i, (test_pssm, test_hmm, test_label, label_for_loss) in enumerate(tqdm(test_loader)):
         # print("test_pssm",test_pssm)
         test_pssm = torch.tensor(test_pssm, dtype=torch.float32).to(device)
         test_hmm = torch.tensor(test_hmm, dtype=torch.float32).to(device)
         test_label = torch.tensor(test_label, dtype=torch.float32).to(device)
         label_for_loss = torch.tensor(label_for_loss, dtype=torch.float32).to(device)
+        model.eval()
         y_test = model(test_pssm, test_hmm, label_for_loss, trainstate=False)
-        y_test1=np.array(y_test.cpu())
-        pred=np.array(pred)
+        y_test1=y_test.squeeze()
+        y_test1=torch.argmax(y_test1,dim=1)
+        y_test1=np.array(y_test1.cpu())
+        sequence=save_sequence(y_test1,i,reallength1t)
 
-        pred=np.append(pred,y_test1)
+        sequences.append(sequence)
+        # pred=np.array(pred)
+        #
+        # pred=np.append(pred,y_test1)
 
-        rep_test = model.get_rep_layer()
-        criterion(output=y_test, tar=test_label, rep=rep_test, who='test')
+
+        # rep_test = model.get_rep_layer()
+        # criterion(output=y_test, tar=test_label, rep=rep_test, who='test')
 
         t_TP, t_TN, t_FP, t_FN, tH_TP, tH_TN, tH_FP, tH_FN, tE_TP, tE_TN, tE_FP, tE_FN, tC_TP, tC_TN, tC_FP, tC_FN,t_H1,t_E1,t_C1,t_H2,t_E2,t_C2,t_H,t_E,t_C,tH_count,tE_count,tC_count,tH_FN,tH_TP,tH_FP,tH_TN,tE_FN,tE_TP,tE_FP,tE_TN,tC_FN,tC_TP,tC_FP,tC_TN,h_h, h_e, h_c, e_h, e_e, e_c, c_h, c_e, c_c,sov_h, sov_e, sov_c, sov_o, flag = accuracy(
             x_1=y_test[0, :, 0].cpu(), x_2=y_test[0, :, 1].cpu(), x_3=y_test[0, :, 2].cpu(), label=test_label.cpu(),
@@ -902,7 +935,11 @@ def save_model(high_acc, epoch, bgru, h_acc, h_sn, h_sp, h_mcc):
 
 
 
+    with open(args.output_dir+'predicted_seq.txt','w') as f:
 
+        for i in range(len(sequences)):
+            f.write(csv_name_list[i].split('/')[-1]+':')
+            f.write(sequences[i]+'\n')
 
 
 
@@ -924,6 +961,24 @@ def save_model(high_acc, epoch, bgru, h_acc, h_sn, h_sp, h_mcc):
     print('SOV_E', SOV_E / sov_count)
     print('SOV_C', SOV_C / sov_count)
     print('SOV', SOV / sov_count)
+    with open(args.output_dir+'evaluate.txt','w') as f:
+        f.write(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time())))
+        f.write('\n')
+        f.write('HEC_acc:'+str(HEC_acc)+'\n')
+        f.write('H_H:'+str(H_H)+'\n')
+        f.write('H_E:'+str(H_E)+'\n')
+        f.write('H_C:'+str(H_C)+'\n')
+        f.write('E_H:'+str(E_H)+'\n')
+        f.write('E_E:'+str(E_E)+'\n')
+        f.write('E_C:'+str(E_C)+'\n')
+        f.write('C_H:'+str(C_H)+'\n')
+        f.write('C_E:'+str(C_E)+'\n')
+        f.write('C_C:'+str(C_C)+'\n')
+
+        f.write('SOV_H:'+ str(SOV_H / sov_count)+'\n')
+        f.write('SOV_E:'+ str(SOV_E / sov_count)+'\n')
+        f.write('SOV_C:'+ str(SOV_C / sov_count)+'\n')
+        f.write('SOV:'  + str(SOV / sov_count)  +'\n')
 
 
 
@@ -944,7 +999,7 @@ def get_parameters(net):
 
 # get_parameters(model)
 for epoch in range(0, epoch_num):
-    print('epoch', epoch)
+
 
     with torch.no_grad():
 
@@ -962,5 +1017,10 @@ print('sn:', h_sn)
 print('sp:', h_sp)
 print('mcc:', h_mcc)
 print('acc:', h_acc)
+with open(args.output_dir + 'evaluate.txt', 'a') as f:
+    f.write('sn:'+str(h_sn)+'\n')
+    f.write('sp:'+str(h_sp)+'\n')
+    f.write('mcc:'+ str(h_mcc)+'\n')
+    f.write('acc:'+str(h_acc)+'\n')
 
 get_parameters(model)
