@@ -19,4 +19,7 @@ check the output sequence in --output_dir+'./predicted_seq.txt'
 check the performance in --output_dir+'./evaluate.txt'
 
 ## Email
-Email of the first author Cao: caoxiao.sdu@bytedance.com||1265199717@qq.com||shaocao@mail.sdu.edu.cn
+Email of the first author Cao: caoxiao.sdu@bytedance.com||1265199717@qq.com(prefer)||shaocao@mail.sdu.edu.cn
+
+## Notification
+Only for academic use. Commercial use is forbidden.
